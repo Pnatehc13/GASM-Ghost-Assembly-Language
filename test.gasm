@@ -1,0 +1,7 @@
+PRINT_STR "Enter number: "
+READ_INT
+DUP
+CMP
+FUNC 
+
+
