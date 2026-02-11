@@ -12,60 +12,96 @@ typedef struct
 	int arg;
 } Ins;//Instruction FOrmat
 
-unsigned char * prog;// Loading program into memory
-int ps = 0;//program size
+#define MEM_SIZE    65536
+#define CODE_START  0x0000
+#define DATA_START  0x4000
+#define HEAP_START  0x6000
+#define REG_START   0x8000  // Registers start here
+#define LS_START    0x8100  // Loop Stack starts here
+#define STACK_START 0x9000  // Main Stack starts here
+#define RS_START    0xFFFF  // Return Stack (grows down)
 
-int stack[STACK];//Stack 
-int sp = -1;//
-int ip = 0;//Instruction pointer
-
-
-int retstack[STACK];
-int rsp = -1;
-void pushrsp()
+typedef struct
 {
-	rsp++;
-	retstack[rsp] = ip+4;
+	unsigned char mem[MEM_SIZE];
+	int ip;//Instruction pointer
+	int sp;//Stack pointer
+	int lsp;//Loop Stack Pointer
+	int rsp;//Return Stack pointer
+	int ps;//program size
+	int running;
+}VM;
+
+
+
+
+VM* new_Vm()
+{
+	VM* vm = (VM *)malloc(sizeof(VM));
+	vm->sp = STACK_START;
+	vm->rsp = RS_START;
+	vm->lsp = LS_START;
+	vm->ip = CODE_START;
+	vm->running =1;
+	return vm;	
 }
-int poprsp()
+
+void push(VM* vm,int v)
 {
-	return retstack[rsp--];
-}
-
-
-int loopstk[MAXLOOP];
-int lsp = -1;
-
-
-int reg[4];
-
-void push(int v)
-{
-	if(sp >= STACK-1)
+	if(vm->sp +4 >= RS_START)
 	{
 		printf("ERROR: Stack Overflow!!");
 		exit(1);
 	}
-	stack[++sp] = v;
+	*(int*)&vm->mem[vm->sp] = v;
+	vm->sp+=4;
 }
 
-int pop()
+int pop(VM* vm)
 {
-	if(sp>=0)return stack[sp--];
-	printf("Stack Underflow");
-	exit(1);
+	vm->sp-=4;
+	
+	if(vm->sp<STACK_START)
+	{
+		printf("Stack Underflow");
+		exit(1);
+	}
+	return *(int*)&vm->mem[vm->sp];
 }
 
-void pushloop(int v)
+void pushrsp(VM*vm,int val)
 {
-	if(lsp<MAXLOOP)loopstk[++lsp] = v;
+	vm->rsp-=4;
+	if(vm->rsp<=vm->sp)
+	{
+		printf("Error:!!");
+		exit(1);
+	}
+	*(int*)&vm->mem[vm->rsp] = val;
 }
-void poploop()
+int poprsp(VM*vm)
 {
-	lsp--;
+	int val = *(int*)&vm->mem[vm->rsp];
+	vm->rsp+=4;
+	return val;
 }
 
-void loader(char* path)
+void pushloop(VM*vm,int v)
+{
+	if(vm->lsp>=STACK_START)
+	{
+		printf("Error :Insuffient Space!! ");
+		exit(1);
+	}
+	*(int*)&vm->mem[vm->lsp] = v;
+	vm->lsp+=4;
+}
+void poploop(VM*vm)
+{
+	vm->lsp-=4;
+}
+
+void loader(VM* vm,char* path)
 {
 	FILE * f = fopen(path,"rb");
 	if(!f)
@@ -74,18 +110,204 @@ void loader(char* path)
 		exit(0);
 	}
 	fseek(f,0,SEEK_END);
-	ps = ftell(f);
+	vm->ps = ftell(f);
 	rewind(f);
-	prog = (unsigned char*)malloc(ps*sizeof(unsigned char));
-	if(prog == NULL)
+
+	if(vm->ps >DATA_START)
 	{
 		printf("CRITICAL ERROR: Failed to allocate memory for program.\n");
 		exit(1);
 	}
-	fread(prog,1,ps,f);
+	fread(&vm->mem[CODE_START],1,vm->ps,f);
 	fclose(f);
 }
 
+int getincr(unsigned char op) {
+    for (int i = 0; OCT[i].op != -1; i++) {
+        if (OCT[i].op == op) return OCT[i].size;
+    }
+    return 1;
+}
+
+
+void cpu(VM* vm)
+{
+	int ip = vm->ip;
+	int currip = ip;
+	unsigned char opcode = vm->mem[ip];
+	int incr = getincr(opcode);
+		
+	switch(opcode)	
+		{
+			case HALT:
+			{
+				vm->running = 0;
+				return;
+			}
+			case PUSH:
+			{
+				int arg = *(int*)&vm->mem[ip+1];
+				push(vm,arg);
+				break;
+			}
+			case POP:
+			{
+				pop(vm);
+				break;
+			}
+			case ADD:
+			{
+				int a =pop(vm);
+				int b = pop(vm);
+				push(vm,a+b);
+				break;
+			}
+			case SUB:
+			{
+				int a = pop(vm);
+				int b = pop(vm);
+				push(vm,b - a);
+				break;
+			}
+			case MUL:
+			{
+				int a = pop(vm);
+				int b = pop(vm);
+				push(vm,b*a);
+				break;
+			}
+			case DIV:
+			{
+				int a = pop(vm);
+				int b = pop(vm);
+				if(a==0)
+				{
+					printf("ERROR: Division by 0");
+					exit(1);
+				}
+				push(vm,b/a);
+				break;
+			}
+			case STORE:
+			{
+				int ri = *(int*)&vm->mem[ip+1];
+				int val = pop(vm);
+				*(int*)&vm->mem[REG_START+(ri*4)]= val;
+				break;
+			}
+			case LOAD:
+			{
+				int ri = *(int*)&vm->mem[ip+1];
+				int val = *(int*)&vm->mem[REG_START+(ri*4)];
+				push(vm,val);
+				break;
+			}
+			case START_LOOP:
+			{
+				pushloop(vm,ip+1);
+				break;
+			}
+			case END_LOOP:
+			{
+				int t = pop(vm);
+				if(t != 0) ip = *(int*)&vm->mem[vm->lsp-4];
+				else{poploop(vm);}  
+				break;
+			}
+			case PRINT:
+			{
+				printf(">> %d\n",*(int*)&vm->mem[vm->sp-4]);
+				break;
+			}
+			case PRINT_C:
+			{
+				int val = pop(vm);
+				printf("%c",val);
+				break;
+			}
+			case PRINT_STR:
+			{
+				int addr = pop(vm);
+				char* s = (char*)&vm->mem[addr];
+				printf("%s",s);
+				break;
+			}
+			case JMP:
+			{
+				ip = *(int*)&vm->mem[ip+1];
+				break;
+			}
+			case CMP:
+			{
+				int a = pop(vm);
+				int b = pop(vm);
+				if(a==b)push(vm,1);
+				else push(vm,0);
+				break;
+			}
+			case JE:
+			{
+				int target = *(int*)&vm->mem[ip+1];
+				int a = pop(vm);
+				if(a == 1)ip = target;
+				break;
+			}
+			case JNE:
+			{
+				int target = *(int *)&vm->mem[ip+1];
+				int a = pop(vm);
+				if(a!=1)ip = target;
+				break;
+			}
+			case DUP:
+			{
+				int val = *(int*)&vm->mem[vm->sp-4];
+				push(vm,val);
+				break;
+			}
+			case DUP2:
+			{
+				int a = pop(vm);
+				int b = pop(vm);
+				push(vm,b);
+				push(vm,a);
+				push(vm,b);
+				push(vm,a);
+				break;
+			}
+			case SWAP:
+			{
+				int a = pop(vm);
+				int b = pop(vm);
+				push(vm,a);
+				push(vm,b);
+				break;
+			}
+			case READ_INT:
+			{
+				int val;
+				scanf("%d",&val);
+				push(vm,val);
+				break;
+			}
+			case CALL:
+			{
+				pushrsp(vm,ip+5);
+				ip = *(int*)&vm->mem[ip+1];
+				break;
+			}
+			case RET:
+			{
+				ip = poprsp(vm);
+				break;
+			}
+			default: break;
+		}
+		
+	if(ip == currip)vm->ip = currip+incr;
+	else vm->ip = ip;
+	
+}
 
 int main(int argc,char** argv)
 {
@@ -94,199 +316,15 @@ int main(int argc,char** argv)
 		printf("Usage: ./");
 		return 1;
 	}
-			
-	loader(argv[1]);
-	
-	while(ip<ps)
-	{
-		unsigned char opcode = prog[ip];
-		
-		switch(opcode)	
-		{
-			case HALT:
-			{
-				return 0;
-			}
-			case PUSH:
-			{
-				int arg = *(int*)&prog[ip+1];
-				push(arg);
-				ip+=5;
-				break;
-			}
-			case POP:
-			{
-				pop();
-				ip+=1;
-				break;
-			}
-			case ADD:
-			{
-				int a =pop();
-				int b = pop();
-				push(a+b);
-				ip+=1;
-				break;
-			}
-			case SUB:
-			{
-				int a = pop();
-				int b = pop();
-				push(b - a);
-				ip+=1;
-				break;
-			}
-			case MUL:
-			{
-				int a = pop();
-				int b = pop();
-				push(b*a);
-				ip+=1;
-				break;
-			}
-			case DIV:
-			{
-				int a = pop();
-				int b = pop();
-				if(a==0)
-				{
-					printf("ERROR: Division by 0");
-					exit(1);
-				}
-				push(b/a);
-				ip+=1;
-				break;
-			}
-			case STORE:
-			{
-				int ri = *(int*)&prog[ip+1];
-				reg[ri] = pop();
-				ip+=5;
-				break;
-			}
-			case LOAD:
-			{
-				int ri = *(int*)&prog[ip+1];
-				push(reg[ri]);
-				ip+=5;
-				break;
-			}
-			case START_LOOP:
-			{
-				pushloop(ip+1);
-				ip+=1;
-				break;
-			}
-			case END_LOOP:
-			{
-				int t = pop();
-				if(t != 0) ip = loopstk[lsp];
-				else{poploop();ip+=1;}  
-				break;
-			}
-			case PRINT:
-			{
-				printf(">> %d\n",stack[sp]);
-				ip+=1;
-				break;
-			}
-			case PRINT_C:
-			{
-				int val = pop();
-				printf("%c",val);
-				ip+=1;
-				break;
-			}
-			case PRINT_STR:
-			{
-				int addr = pop();
-				char* s = (char*)&prog[addr];
-				printf("%s",s);
-				ip+=1;
-				break;
-			}
-			case JMP:
-			{
-				ip = *(int*)&prog[ip+1];
-				break;
-			}
-			case CMP:
-			{
-				int a = pop();
-				int b = pop();
-				if(a==b)push(1);
-				else push(0);
-				ip+=1;
-				break;
-			}
-			case JE:
-			{
-				int target = *(int*)&prog[ip+1];
-				int a = pop();
-				if(a == 1)ip = target;
-				else ip+=5;
-				break;
-			}
-			case JNE:
-			{
-				int target = *(int *)&prog[ip+1];
-				int a = pop();
-				if(a!=1)ip = target;
-				else ip+=5;
-				break;
-			}
-			case DUP:
-			{
-				push(stack[sp]);
-				ip+=1;
-				break;
-			}
-			case DUP2:
-			{
-				int a = pop();
-				int b = pop();
-				push(b);
-				push(a);
-				push(b);
-				push(a);
-				ip+=1;
-				break;
-			}
-			case SWAP:
-			{
-				int a = pop();
-				int b = pop();
-				push(a);
-				push(b);
-				ip+=1;
-				break;
-			}
-			case READ_INT:
-			{
-				int val;
-				scanf("%d",&val);
-				push(val);
-				ip+=1;
-				break;
-			}
-			case CALL:
-			{
-				pushrsp();
-				ip = *(int*)&prog[ip+1];
-				break;
-			}
-			case RET:
-			{
-				ip = poprsp()+1;
-				break;
-			}
-			default: break;
-		}
-	}
-
-	free(prog);
+	VM* machine = new_Vm();	
+	loader(machine,argv[1]);
+	while(machine->running && machine->ip < machine->ps) {cpu(machine);}
+	free(machine);
 	return 0;
 }
+
+
+
 
 
 

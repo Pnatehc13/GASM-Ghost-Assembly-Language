@@ -48,6 +48,43 @@ char* pop()
 }
 int csize = 0;
 int dsize = 0;
+
+
+void parse1(char* t)
+{
+	int i =0;
+	while(OCT[i].op !=-1)
+	{
+		if(strcmp(t,OCT[i].name)==0)
+		{
+			csize+=OCT[i].size;
+			return;
+		}
+		i++;
+	}
+	printf("Error: Opcode not Found!!");
+	exit(1);
+}
+
+int parse2(char* t,unsigned char* c,int* op)
+{
+	int i=0;
+	while(OCT[i].op != -1)
+	{
+		if(strcmp(t,OCT[i].name)==0)
+		{
+			if(OCT[i].op == FUNC || OCT[i].op == LABEL) return 0;
+			*c = OCT[i].op;
+			*op = OCT[i].hasarg;
+			return 1;
+		}
+		i++;
+	}
+	printf("Error: Opcode not Found!!");
+	exit(1);
+}
+
+
 int main(int argc, char** argv)
 {
 	if(argc < 2)
@@ -78,36 +115,7 @@ int main(int argc, char** argv)
 		if(c)*c='\0';;
 		char* token = strtok(line," \n\t");
 		if(!token)continue;
-		if (strcmp(token, "PUSH") == 0)      { csize+=5; } 
-        else if (strcmp(token, "POP") == 0)  { csize+=1; } 
-        else if (strcmp(token, "ADD") == 0)  { csize+=1; } 
-        else if (strcmp(token, "SUB") == 0)  { csize+=1; } 
-        else if (strcmp(token, "MUL") == 0)  { csize+=1; } 
-        else if (strcmp(token, "DIV") == 0)  { csize+=1; } 
-        else if (strcmp(token, "PRINT") == 0){ csize+=1; } 
-        else if (strcmp(token, "PRINT_C") == 0){ csize+=1; } 
-        else if (strcmp(token, "PRINT_STR") == 0){ csize+=1; } 
-        else if (strcmp(token, "STORE") == 0){ csize+=5; } 
-        else if (strcmp(token, "LOAD") == 0) { csize+=5; } 
-        else if (strcmp(token, "START_LOOP") == 0) { csize+=1; } 
-        else if (strcmp(token, "END_LOOP") == 0)   { csize+=1; } 
-        else if (strcmp(token, "CMP") == 0)   { csize+=1; } 
-        else if (strcmp(token, "JMP") == 0)   { csize+=5; } 
-        else if (strcmp(token, "HALT") == 0)  { csize+=1; } 
-        else if (strcmp(token, "JE") == 0) {csize+=5; } 
-        else if (strcmp(token, "DUP") == 0) {csize+=1; } 
-        else if (strcmp(token, "DUP2") == 0) {csize+=1; } 
-        else if (strcmp(token, "SWAP") == 0) {csize+=1; } 
-        else if (strcmp(token, "READ_INT") == 0) {csize+=1; } 
-        else if (strcmp(token, "FUNC") == 0) {csize+=0; } 
-        else if (strcmp(token, "CALL") == 0) {csize+=5; } 
-        else if (strcmp(token, "RET") == 0) {csize+=1; }
-        else if (strcmp(token, "JNE") == 0) {csize+=5; }
-        else if (strcmp(token, "LABEL") == 0) {csize+=0; }
-        else {
-            printf("Error: Unknown Instruction '%s'\n", token);
-            continue;
-        }
+		else parse1(token);
 		
 
 		char *str = strtok(NULL,"\n\t");
@@ -123,8 +131,10 @@ int main(int argc, char** argv)
 		}
 				
 	}
+	printf("Pass 1 Calculated Code Size: %d\n", csize);
 	rewind(source);
 	int curr = csize;
+	printf("Pass 2 Starting String Address at: %d\n", curr);
 	while(fgets(line,sizeof(line),source))
 	{
 		char* c = strchr(line,';');
@@ -137,37 +147,9 @@ int main(int argc, char** argv)
 		int arg = 0;
 		int has_arg = 0;
 		
-		if (strcmp(token, "PUSH") == 0)      { opcode = PUSH; has_arg = 1; } 
-        else if (strcmp(token, "POP") == 0)  { opcode = POP; } 
-        else if (strcmp(token, "ADD") == 0)  { opcode = ADD; } 
-        else if (strcmp(token, "SUB") == 0)  { opcode = SUB; } 
-        else if (strcmp(token, "MUL") == 0)  { opcode = MUL; } 
-        else if (strcmp(token, "DIV") == 0)  { opcode = DIV; } 
-        else if (strcmp(token, "PRINT") == 0){ opcode = PRINT; } 
-        else if (strcmp(token, "PRINT_C") == 0){ opcode = PRINT_C; } 
-        else if (strcmp(token, "PRINT_STR") == 0){ opcode = PRINT_STR; } 
-        else if (strcmp(token, "STORE") == 0){ opcode = STORE; has_arg = 1; } 
-        else if (strcmp(token, "LOAD") == 0) { opcode = LOAD; has_arg = 1; } 
-        else if (strcmp(token, "START_LOOP") == 0) { opcode = START_LOOP; } 
-        else if (strcmp(token, "END_LOOP") == 0)   { opcode = END_LOOP; } 
-        else if (strcmp(token, "CMP") == 0)   { opcode = CMP; } 
-        else if (strcmp(token, "JMP") == 0)   { opcode = JMP; has_arg = 1; } 
-        else if (strcmp(token, "HALT") == 0)  { opcode = HALT; } 
-        else if (strcmp(token, "JE") == 0) {opcode = JE; has_arg = 1;}
-        else if (strcmp(token, "DUP") == 0) {opcode = DUP; } 
-        else if (strcmp(token, "DUP2") == 0) {opcode = DUP2; } 
-        else if (strcmp(token, "SWAP") == 0) {opcode = SWAP; } 
-        else if (strcmp(token, "READ_INT") == 0) {opcode = READ_INT; } 
-        else if (strcmp(token, "FUNC") == 0 || strcmp(token,"LABEL") == 0) {continue; } 
-        else if (strcmp(token, "CALL") == 0) {opcode = CALL;has_arg =1;}
-        else if (strcmp(token, "RET") == 0) {opcode = RET; } 
-        else {
-            printf("Error: Unknown Instruction '%s'\n", token);
-            continue;
-        }
-
-        fwrite(&opcode,sizeof(unsigned char),1,op);
-
+		int valid = parse2(token,&opcode,&has_arg);
+     	if(valid) fwrite(&opcode,sizeof(unsigned char),1,op);
+		else continue;
         if(has_arg)
         {
         	char* arg_str = strtok(NULL,"\n\t");
@@ -183,7 +165,7 @@ int main(int argc, char** argv)
         		else if(arg_str[0] == '"')
         		{
         			arg = curr;
-        			curr+=strlen(arg_str)+1;
+        			curr+=strlen(arg_str)-1;
         		}
         		else if(opcode == CALL || opcode == JMP || opcode == JE)
         		{
@@ -197,6 +179,7 @@ int main(int argc, char** argv)
    	    }
    	    
 	}
+	printf("Pass 2 Starting String Address at: %d\n", curr);
 	for(int i=0;i<=sp;i++)
 	{
 		char *s = strings[i];
