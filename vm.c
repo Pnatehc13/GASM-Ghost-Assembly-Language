@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
+#include <time.h>
 #include "gasm.h"
 #define MAX 4096
 #define STACK 256
@@ -20,6 +22,13 @@ typedef struct
 #define LS_START    0x8100  // Loop Stack starts here
 #define STACK_START 0x9000  // Main Stack starts here
 #define RS_START    0xFFFF  // Return Stack (grows down)
+#define VRAM_START  0xC000
+#define VRAM_END    0xC400
+#define BACK_BUFFER 0xD000
+#define SCREEN_W 32
+#define SCREEN_H 32
+
+
 
 typedef struct
 {
@@ -37,6 +46,7 @@ typedef struct
 
 VM* new_Vm()
 {
+	srand((unsigned int)time(NULL));	
 	VM* vm = (VM *)malloc(sizeof(VM));
 	vm->sp = STACK_START;
 	vm->rsp = RS_START;
@@ -130,6 +140,30 @@ int getincr(unsigned char op) {
 }
 
 
+
+void render(VM* vm)
+{
+	printf("\033[H");
+	char buffer[3000];
+	int i =0;
+	for(int y =0;y<SCREEN_H;y++)
+	{
+		for(int x =0;x<SCREEN_W;x++)
+		{
+			int index = VRAM_START + (y*32)+x;
+			unsigned char val = vm->mem[index];
+			if(val > 4)val = 4;
+			buffer[i++] = CHARSET[val];
+			buffer[i++] = CHARSET[val];
+		}
+		buffer[i++] = '\n';
+	}
+	buffer[i]='\0';
+	printf("%s",buffer);
+}
+
+
+
 void cpu(VM* vm)
 {
 	int ip = vm->ip;
@@ -144,6 +178,18 @@ void cpu(VM* vm)
 				vm->running = 0;
 				return;
 			}
+			case DRAW:
+			{
+				int c = pop(vm);
+				int y = pop(vm);
+				int x = pop(vm);
+				if(x>=0 && x<SCREEN_W && y>=0 && y< SCREEN_H)
+				{
+					int index = BACK_BUFFER + (y*32)+x;
+					vm->mem[index] = (unsigned char) c;
+				}
+				break;
+			}
 			case PUSH:
 			{
 				int arg = *(int*)&vm->mem[ip+1];
@@ -153,6 +199,28 @@ void cpu(VM* vm)
 			case POP:
 			{
 				pop(vm);
+				break;
+			}
+			case CLS:
+			{
+				memset(&vm->mem[VRAM_START], 0, 1024);
+				memset(&vm->mem[BACK_BUFFER],0,1024);
+				break;
+			}
+			case SLEEP:
+			{
+				int m = pop(vm);
+				#ifdef _WIN32
+					Sleep(m);
+				#else 
+					usleep(m*1000);
+				#endif
+				break;
+			}
+			case SHOW:
+			{
+				memcpy(&vm->mem[VRAM_START],&vm->mem[BACK_BUFFER],1024);
+				render(vm);
 				break;
 			}
 			case ADD:
@@ -301,6 +369,14 @@ void cpu(VM* vm)
 				ip = poprsp(vm);
 				break;
 			}
+			case RAND:
+			{
+				int u = pop(vm);
+				int l = pop(vm);
+				if(u<=l){printf("Error!!");exit(1);}
+				int num = rand()%(u-l+1)+l;
+				push(vm,num);
+			}
 			default: break;
 		}
 		
@@ -311,6 +387,7 @@ void cpu(VM* vm)
 
 int main(int argc,char** argv)
 {
+	printf("\033[?25l");
 	if(argc < 2)
 	{
 		printf("Usage: ./");
@@ -318,7 +395,12 @@ int main(int argc,char** argv)
 	}
 	VM* machine = new_Vm();	
 	loader(machine,argv[1]);
-	while(machine->running && machine->ip < machine->ps) {cpu(machine);}
+	while(machine->running && machine->ip < machine->ps) 
+	{	
+		cpu(machine);
+	}
+	printf("\033[?25h");
+	render(machine);
 	free(machine);
 	return 0;
 }

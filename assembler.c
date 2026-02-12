@@ -157,7 +157,11 @@ int main(int argc, char** argv)
 
         	if(arg_str)
         	{
-        		if(opcode == STORE || opcode== LOAD)arg = arg_str[0] - 'A';
+        		if(opcode == STORE || opcode== LOAD)
+        		{
+        			if(arg_str[0] >= '0' && arg_str[0] <= '9') arg = atoi(arg_str);
+        			else arg = arg_str[0] - 'A';
+        		}
         		else if(arg_str[0] == '\'')
         		{
         			arg = arg_str[1];
@@ -167,7 +171,7 @@ int main(int argc, char** argv)
         			arg = curr;
         			curr+=strlen(arg_str)-1;
         		}
-        		else if(opcode == CALL || opcode == JMP || opcode == JE)
+        		else if(opcode == CALL || opcode == JMP || opcode == JE|| opcode == JNE)
         		{
         			arg = addr(arg_str);
         			if(arg == -1) arg = atoi(arg_str);

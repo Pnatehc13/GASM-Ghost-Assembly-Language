@@ -1,0 +1,72 @@
+; --- INITIALIZE STATE ---
+PUSH 1      ; Start at X=1
+STORE 0
+PUSH 1      ; Start at Y=1
+STORE 1
+PUSH 1      ; Initial X Direction (Right)
+STORE 2
+PUSH 1      ; Initial Y Direction (Down)
+STORE 3
+
+LABEL MAIN_LOOP
+    ; 0. CLEAR SCREEN
+    CLS
+
+    ; 1. DRAW THE BALL
+    LOAD 0      ; X
+    LOAD 1      ; Y
+    PUSH 4      ; Intensity (@)
+    DRAW
+
+    ; 2. SYNC / DELAY
+    PUSH 30     ; 30ms delay
+    SLEEP
+    SHOW
+
+    ; 3. UPDATE POSITION (Pos = Pos + Dir)
+    LOAD 0
+    LOAD 2      ; X Dir
+    ADD
+    STORE 0
+
+    LOAD 1
+    LOAD 3      ; Y Dir
+    ADD
+    STORE 1
+
+    ; 4. BOUNDARY CHECK X (0 or 31)
+    LOAD 0
+    PUSH 0
+    CMP
+    JE REVERSE_X
+    LOAD 0
+    PUSH 31
+    CMP
+    JE REVERSE_X
+
+LABEL CHECK_Y
+    ; 5. BOUNDARY CHECK Y (0 or 31)
+    LOAD 1
+    PUSH 0
+    CMP
+    JE REVERSE_Y
+    LOAD 1
+    PUSH 31
+    CMP
+    JE REVERSE_Y
+
+    JMP MAIN_LOOP
+
+LABEL REVERSE_X
+    LOAD 2
+    PUSH -1
+    MUL
+    STORE 2     ; Reverse X direction
+    JMP CHECK_Y
+
+LABEL REVERSE_Y
+    LOAD 3
+    PUSH -1
+    MUL
+    STORE 3     ; Reverse Y direction
+    JMP MAIN_LOOP
