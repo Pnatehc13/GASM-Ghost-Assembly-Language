@@ -17,7 +17,7 @@ struct
 {
 	char name[50];
 	int addr;
-}symtab[100];
+}symtab[10000];
 int tsize = 0;
 void insert(char* s,int a)
 {
