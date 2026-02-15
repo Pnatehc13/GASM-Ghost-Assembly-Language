@@ -23,8 +23,8 @@ typedef struct
 #define STACK_START 0x14800  // Main Stack starts here
 #define RS_START    0x18800  // Return Stack (grows down)
 #define VRAM_START  0x1C800
-#define VRAM_END    0x1D800
 #define BACK_BUFFER 0x1D800
+#define RESERVED    0x1E800
 #define SCREEN_W 64
 #define SCREEN_H 64
 
@@ -32,7 +32,7 @@ typedef struct
 
 typedef struct
 {
-	unsigned char mem[MEM_SIZE];
+	unsigned char* mem;
 	int ip;//Instruction pointer
 	int sp;//Stack pointer
 	int lsp;//Loop Stack Pointer
@@ -45,11 +45,11 @@ typedef struct
 
 VM* machine;
 
-
 VM* new_Vm()
 {
 	srand((unsigned int)time(NULL));	
 	VM* vm = (VM *)malloc(sizeof(VM));
+	vm->mem = (unsigned char*)malloc(MEM_SIZE*sizeof(unsigned char));
 	vm->sp = STACK_START;
 	vm->rsp = RS_START;
 	vm->lsp = LS_START;
@@ -58,57 +58,103 @@ VM* new_Vm()
 	return vm;	
 }
 
+void vm_panic(char * msg)
+{
+	printf("Panic:%s",msg);
+	exit(1);
+}
+
+int vmread(VM* vm,int addr)
+{
+	if(addr<0||addr+4 > MEM_SIZE)
+	{
+		vm_panic("Access Out of Bounds!!");
+	}
+	return (int)(
+		(vm->mem[addr])|(vm->mem[addr+1]<<8)|(vm->mem[addr+2]<<16)|(vm->mem[addr+3]<<24)
+	);
+}
+
+void vmwrite(VM* vm,int addr,int val)
+{
+	if(addr<0||addr+4>MEM_SIZE)
+	{
+		vm_panic("Access Out of Bounds!");
+	}
+	vm->mem[addr] = (unsigned char)(val & 0xFF);
+	vm->mem[addr+1] = (unsigned char)((val >> 8) & 0xFF);
+	vm->mem[addr+2] = (unsigned char)((val >> 16) & 0xFF);
+	vm->mem[addr+3] = (unsigned char)((val >> 24) & 0xFF);
+}
+
 
 unsigned int palette[] = { 0x000000, 0xFFFFFF, 0xFF0000, 0x00FF00, 0x0000FF };
 unsigned int pixel[SCREEN_H*SCREEN_W];
+
+
+
 void push(VM* vm,int v)
 {
-	if(vm->sp +4 >= RS_START)
+	if(vm->sp + 4 >= RS_START)
 	{
-		printf("ERROR: Stack Overflow!!");
-		exit(1);
+		vm_panic("Stack Overflow!!");
 	}
-	*(int*)&vm->mem[vm->sp] = v;
-	vm->sp+=4;
+	vmwrite(vm, vm->sp, v);
+	vm->sp += 4;
 }
 
 int pop(VM* vm)
 {
-	vm->sp-=4;
-	
-	if(vm->sp<STACK_START)
+	vm->sp -= 4;
+	if(vm->sp < STACK_START)
 	{
-		printf("Stack Underflow");
-		exit(1);
+		vm_panic("Stack Underflow!!");
 	}
-	return *(int*)&vm->mem[vm->sp];
+	return vmread(vm, vm->sp);
 }
 
 void pushrsp(VM*vm,int val)
 {
-	vm->rsp-=4;
-	if(vm->rsp<=vm->sp)
+	vm->rsp -= 4;
+	if(vm->rsp <= vm->sp)
 	{
-		printf("Error:!!");
-		exit(1);
+		vm_panic("Return Stack Overflow!!");
 	}
-	*(int*)&vm->mem[vm->rsp] = val;
+	vmwrite(vm, vm->rsp, val);
 }
+
 int poprsp(VM*vm)
 {
-	int val = *(int*)&vm->mem[vm->rsp];
-	vm->rsp+=4;
+	if(vm->rsp >= VRAM_START)
+	{
+		vm_panic("Return Stack Underflow!!");
+	}
+	int val = vmread(vm, vm->rsp);
+	vm->rsp += 4;
 	return val;
+}
+
+void vmwrite8(VM* vm, int addr, unsigned char val) {
+    if (addr < 0 || addr >= MEM_SIZE) {
+        vm_panic("Access Out of Bounds (8-bit write)!");
+    }
+    vm->mem[addr] = val;
+}
+
+unsigned char vmread8(VM* vm, int addr) {
+    if (addr < 0 || addr >= MEM_SIZE) {
+        vm_panic("Access Out of Bounds (8-bit read)!");
+    }
+    return vm->mem[addr];
 }
 
 void pushloop(VM*vm,int v)
 {
 	if(vm->lsp>=STACK_START)
 	{
-		printf("Error :Insuffient Space!! ");
-		exit(1);
+		vm_panic("Loop Stack Overflow!!");
 	}
-	*(int*)&vm->mem[vm->lsp] = v;
+	vmwrite(vm, vm->lsp, v);
 	vm->lsp+=4;
 }
 void poploop(VM*vm)
@@ -148,15 +194,14 @@ int getincr(unsigned char op) {
 
 void render(VM* vm)
 {
-	
-	int i =0;
-	for(int y =0;y<SCREEN_H;y++)
+	int i = 0;
+	for(int y = 0; y < SCREEN_H; y++)
 	{
-		for(int x =0;x<SCREEN_W;x++)
+		for(int x = 0; x < SCREEN_W; x++)
 		{
-			int index = VRAM_START + (y*64)+x;
-			unsigned char val = vm->mem[index];
-			val = val%5;
+			int index = VRAM_START + (y * SCREEN_W) + x;
+			unsigned char val = vmread8(vm, index);
+			val = val % 5;
 			pixel[i++] = palette[val]; 
 		}
 	}
@@ -168,237 +213,275 @@ void render(VM* vm)
 	bmi.bmiHeader.biBitCount= 32;
 	bmi.bmiHeader.biCompression = BI_RGB;
 
-	StretchDIBits(vm->hdc,0,0,640,640,0,0,SCREEN_W,SCREEN_H,pixel,&bmi,DIB_RGB_COLORS,SRCCOPY);
+	StretchDIBits(vm->hdc, 0, 0, 640, 640, 0, 0, SCREEN_W, SCREEN_H, pixel, &bmi, DIB_RGB_COLORS, SRCCOPY);
+}
+
+
+void handle_halt(VM* vm)
+{
+	vm->running = 0;
+}
+void handle_draw(VM* vm)
+{
+	int c = pop(vm);
+	int y = pop(vm);
+	int x = pop(vm);
+	if(x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H)
+	{
+		int index = BACK_BUFFER + (y * SCREEN_W) + x;
+		vmwrite8(vm, index, (unsigned char)c);
+	}
+}
+
+void handle_push(VM* vm)
+{
+	int arg = vmread(vm, vm->ip + 1);
+	push(vm, arg);
+}
+
+void handle_pop(VM* vm)
+{
+	pop(vm);
+}
+
+void handle_key(VM* vm)
+{
+	int k = pop(vm);
+	if(GetAsyncKeyState(k) & 0x8000) push(vm, 1);
+	else push(vm, 0);
+}
+
+void handle_cls(VM* vm)
+{
+	for(int i = 0; i < 4096; i++) {
+		vmwrite8(vm, VRAM_START + i, 0);
+		vmwrite8(vm, BACK_BUFFER + i, 0);
+	}
+}
+
+void handle_sleep(VM* vm)
+{
+	int m = pop(vm);
+	#ifdef _WIN32
+		Sleep(m);
+	#else 
+		usleep(m * 1000);
+	#endif
+}
+
+void handle_show(VM* vm)
+{
+	for(int i = 0; i < 4096; i++) {
+		vmwrite8(vm, VRAM_START + i, vmread8(vm, BACK_BUFFER + i));
+	}
+	render(vm);
+}
+
+void handle_add(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	push(vm, a + b);
+}
+
+
+void handle_sub(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	push(vm, b - a);
+}
+
+void handle_mul(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	push(vm, b * a);
+}
+void handle_div(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	if(a==0)
+	{
+		printf("ERROR: Division by 0");
+		exit(1);
+	}
+	push(vm,b/a);
+}
+
+
+void handle_store(VM* vm)
+{
+	int ri = vmread(vm,vm->ip + 1);
+	int val = pop(vm);
+	int reg_addr = REG_START + (ri * 4);
+	if(reg_addr < REG_START || reg_addr + 4 > LS_START) {
+		vm_panic("Register access out of bounds!");
+	}
+	vmwrite(vm, reg_addr, val);
+}
+void handle_load(VM* vm)
+{
+	int ri = vmread(vm, vm->ip + 1);
+	int reg_addr = REG_START + (ri * 4);
+	if(reg_addr < REG_START || reg_addr + 4 > LS_START) {
+		vm_panic("Register access out of bounds!");
+	}
+	int val = vmread(vm, reg_addr);
+	push(vm, val);
+}
+
+
+void handle_startloop(VM* vm)
+{
+	pushloop(vm, vm->ip + 1);
+}
+void handle_endloop(VM* vm)
+{
+	int t = pop(vm);
+	if(t != 0) vm->ip = vmread(vm, vm->lsp - 4);
+	else { 
+		poploop(vm); 
+		vm->ip += 1;
+	}  
+}
+void handle_print(VM* vm)
+{
+	printf(">> %d\n", vmread(vm, vm->sp - 4));
+}
+void handle_printc(VM* vm)
+{
+	int val = pop(vm);
+	printf("%c", val);
+}
+void handle_printstr(VM* vm)
+{
+	int addr = pop(vm);
+	// Safe string printing: stop at null or end of memory
+	for(int i = addr; i < MEM_SIZE; i++) {
+		char c = (char)vmread8(vm, i);
+		if(c == '\0') break;
+		printf("%c", c);
+	}
 }
 
 
 
+void handle_jmp(VM* vm)
+{
+	vm->ip = vmread(vm, vm->ip + 1);
+}
+void handle_cmp(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	if(a == b) push(vm, 1);
+	else push(vm, 0);
+}
+void handle_je(VM* vm)
+{
+	int target = vmread(vm, vm->ip + 1);
+	int a = pop(vm);
+	if(a == 1) vm->ip = target;
+	else vm->ip += 5;
+}
+void handle_jne(VM* vm)
+{
+	int target = vmread(vm, vm->ip + 1);
+	int a = pop(vm);
+	if(a != 1) vm->ip = target;
+	else vm->ip += 5;
+}
+
+void handle_dup(VM* vm)
+{
+	int val = vmread(vm, vm->sp - 4);
+	push(vm, val);
+}
+void handle_dup2(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	push(vm, b);
+	push(vm, a);
+	push(vm, b);
+	push(vm, a);
+}
+void handle_swap(VM* vm)
+{
+	int a = pop(vm);
+	int b = pop(vm);
+	push(vm, a);
+	push(vm, b);
+}
+void handle_readint(VM* vm)
+{
+	int val;
+	scanf("%d", &val);
+	push(vm, val);
+}
+
+void handle_call(VM* vm)
+{
+	pushrsp(vm, vm->ip + 5);
+	vm->ip = vmread(vm, vm->ip + 1);
+}
+void handle_ret(VM* vm)
+{
+	vm->ip = poprsp(vm);
+}
+void handle_rand(VM* vm)
+{
+	int u = pop(vm);
+	int l = pop(vm);
+	if(u <= l) { vm_panic("RAND: Upper bound must be greater than lower bound!"); }
+	int num = rand() % (u - l + 1) + l;
+	push(vm, num);
+}
+
+typedef void (*Handler)(VM* vm);
+Handler dispatch_table[] = {
+	[HALT] = handle_halt,
+	[PUSH] = handle_push,
+	[POP] = handle_pop,
+	[ADD] = handle_add,
+    [SUB] = handle_sub,
+    [MUL] = handle_mul,
+    [DIV] = handle_div,
+    [STORE] = handle_store,      
+    [LOAD] = handle_load,       
+    [START_LOOP] = handle_startloop, 
+    [END_LOOP] = handle_endloop,  
+    [JMP] = handle_jmp,       
+    [CMP] = handle_cmp,       
+    [PRINT] = handle_print,     
+    [JE] = handle_je,
+    [DUP] = handle_dup,
+    [DUP2] = handle_dup2,
+    [SWAP] = handle_swap,
+    [PRINT_C] = handle_printc,
+    [PRINT_STR] = handle_printstr,
+    [READ_INT] = handle_readint,
+    [CALL] = handle_call,
+    [RET] = handle_ret,
+    [JNE]= handle_jne,
+    [DRAW]= handle_draw,
+	[SLEEP] = handle_sleep,
+	[CLS]= handle_cls,
+	[SHOW]= handle_show,
+	[RAND] = handle_rand,
+	[KEY] = handle_key
+};
+
 void cpu(VM* vm)
 {
-	int ip = vm->ip;
-	int currip = ip;
-	unsigned char opcode = vm->mem[ip];
-	int incr = getincr(opcode);
-		
-	switch(opcode)	
-		{
-			case HALT:
-			{
-				vm->running = 0;
-				return;
-			}
-			case DRAW:
-			{
-				int c = pop(vm);
-				int y = pop(vm);
-				int x = pop(vm);
-				if(x>=0 && x<SCREEN_W && y>=0 && y< SCREEN_H)
-				{
-					int index = BACK_BUFFER + (y*64)+x;
-					vm->mem[index] = (unsigned char) c;
-				}
-				break;
-			}
-			case PUSH:
-			{
-				int arg = *(int*)&vm->mem[ip+1];
-				push(vm,arg);
-				break;
-			}
-			case POP:
-			{
-				pop(vm);
-				break;
-			}
-			case KEY:
-			{
-				int k = pop(vm);
-				if(GetAsyncKeyState(k)&0x8000)push(vm,1);
-				else push(vm,0);
-				break;
-			}
-			case CLS:
-			{
-				memset(&vm->mem[VRAM_START], 0, 4096);
-				memset(&vm->mem[BACK_BUFFER],0, 4096);
-				break;
-			}
-			case SLEEP:
-			{
-				int m = pop(vm);
-				#ifdef _WIN32
-					Sleep(m);
-				#else 
-					usleep(m*1000);
-				#endif
-				break;
-			}
-			case SHOW:
-			{
-				memcpy(&vm->mem[VRAM_START],&vm->mem[BACK_BUFFER],4096);
-				render(vm);
-				break;
-			}
-			case ADD:
-			{
-				int a =pop(vm);
-				int b = pop(vm);
-				push(vm,a+b);
-				break;
-			}
-			case SUB:
-			{
-				int a = pop(vm);
-				int b = pop(vm);
-				push(vm,b - a);
-				break;
-			}
-			case MUL:
-			{
-				int a = pop(vm);
-				int b = pop(vm);
-				push(vm,b*a);
-				break;
-			}
-			case DIV:
-			{
-				int a = pop(vm);
-				int b = pop(vm);
-				if(a==0)
-				{
-					printf("ERROR: Division by 0");
-					exit(1);
-				}
-				push(vm,b/a);
-				break;
-			}
-			case STORE:
-			{
-				int ri = *(int*)&vm->mem[ip+1];
-				int val = pop(vm);
-				*(int*)&vm->mem[REG_START+(ri*4)]= val;
-				break;
-			}
-			case LOAD:
-			{
-				int ri = *(int*)&vm->mem[ip+1];
-				int val = *(int*)&vm->mem[REG_START+(ri*4)];
-				push(vm,val);
-				break;
-			}
-			case START_LOOP:
-			{
-				pushloop(vm,ip+1);
-				break;
-			}
-			case END_LOOP:
-			{
-				int t = pop(vm);
-				if(t != 0) ip = *(int*)&vm->mem[vm->lsp-4];
-				else{poploop(vm);}  
-				break;
-			}
-			case PRINT:
-			{
-				printf(">> %d\n",*(int*)&vm->mem[vm->sp-4]);
-				break;
-			}
-			case PRINT_C:
-			{
-				int val = pop(vm);
-				printf("%c",val);
-				break;
-			}
-			case PRINT_STR:
-			{
-				int addr = pop(vm);
-				char* s = (char*)&vm->mem[addr];
-				printf("%s",s);
-				break;
-			}
-			case JMP:
-			{
-				ip = *(int*)&vm->mem[ip+1];
-				break;
-			}
-			case CMP:
-			{
-				int a = pop(vm);
-				int b = pop(vm);
-				if(a==b)push(vm,1);
-				else push(vm,0);
-				break;
-			}
-			case JE:
-			{
-				int target = *(int*)&vm->mem[ip+1];
-				int a = pop(vm);
-				if(a == 1)ip = target;
-				break;
-			}
-			case JNE:
-			{
-				int target = *(int *)&vm->mem[ip+1];
-				int a = pop(vm);
-				if(a!=1)ip = target;
-				break;
-			}
-			case DUP:
-			{
-				int val = *(int*)&vm->mem[vm->sp-4];
-				push(vm,val);
-				break;
-			}
-			case DUP2:
-			{
-				int a = pop(vm);
-				int b = pop(vm);
-				push(vm,b);
-				push(vm,a);
-				push(vm,b);
-				push(vm,a);
-				break;
-			}
-			case SWAP:
-			{
-				int a = pop(vm);
-				int b = pop(vm);
-				push(vm,a);
-				push(vm,b);
-				break;
-			}
-			case READ_INT:
-			{
-				int val;
-				scanf("%d",&val);
-				push(vm,val);
-				break;
-			}
-			case CALL:
-			{
-				pushrsp(vm,ip+5);
-				ip = *(int*)&vm->mem[ip+1];
-				break;
-			}
-			case RET:
-			{
-				ip = poprsp(vm);
-				break;
-			}
-			case RAND:
-			{
-				int u = pop(vm);
-				int l = pop(vm);
-				if(u<=l){printf("Error!!");exit(1);}
-				int num = rand()%(u-l+1)+l;
-				push(vm,num);
-			}
-			default: break;
-		}
-		
-	if(ip == currip)vm->ip = currip+incr;
-	else vm->ip = ip;
-	
+	unsigned char opcode = vmread8(vm, vm->ip);
+	dispatch_table[opcode](vm);
+	if(!OCT[opcode].isflow)
+	{
+		vm->ip+=OCT[opcode].size;
+	}
 }
 
 
@@ -499,7 +582,8 @@ int main(int argc,char** argv)
 		}
 		cpu(machine);
 	}
-	ReleaseDC(machine->hwnd,machine->hdc);
+	ReleaseDC(machine->hwnd, machine->hdc);
+	if (machine->mem) free(machine->mem);
 	free(machine);
 	return 0;
 }

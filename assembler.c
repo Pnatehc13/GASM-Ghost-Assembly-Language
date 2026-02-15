@@ -19,6 +19,9 @@ struct
 	int addr;
 }symtab[10000];
 int tsize = 0;
+char libs[255][256];
+int pl = 0;
+
 void insert(char* s,int a)
 {
 	strcpy(symtab[tsize].name,s);
@@ -27,7 +30,7 @@ void insert(char* s,int a)
 }
 int addr(char*s)
 {
-	for(int i=0;i<100;i++)
+	for(int i=0;i<tsize;i++)
 	{
 		if(strcmp(symtab[i].name,s)==0)return symtab[i].addr;
 	}
@@ -48,7 +51,7 @@ char* pop()
 }
 int csize = 0;
 int dsize = 0;
-
+int curr = 0;
 
 void parse1(char* t)
 {
@@ -73,6 +76,7 @@ int parse2(char* t,unsigned char* c,int* op)
 	{
 		if(strcmp(t,OCT[i].name)==0)
 		{
+			if(OCT[i].op == INCLUDE)return 2;
 			if(OCT[i].op == FUNC || OCT[i].op == LABEL) return 0;
 			*c = OCT[i].op;
 			*op = OCT[i].hasarg;
@@ -85,30 +89,18 @@ int parse2(char* t,unsigned char* c,int* op)
 }
 
 
-int main(int argc, char** argv)
+
+void runPass1(char* path)
 {
-	if(argc < 2)
+	
+	FILE *source = fopen(path,"r");
+
+	if(!source)
 	{
-		printf("Usage: ./");
-		return 1;
-	}
-
-	FILE *source = fopen(argv[1],"r");
-	char bfn[256];
-	strcpy(bfn,argv[1]);
-	char* dot = strrchr(bfn,'.');
-	if(dot)strcpy(dot,".bin");
-	else strcat(bfn,".bin");
-
-	FILE *op = fopen(bfn,"wb");
-
-	if(!source || !op)
-	{
-		perror("File Error!");return 1;
+		perror("File Error!");return;
 	}
 
 	char line[256];
-	printf("Compiling %s to %s...\n",argv[1],bfn);
 	while(fgets(line,sizeof(line),source))
 	{
 		char* c = strchr(line,';');
@@ -120,6 +112,22 @@ int main(int argc, char** argv)
 
 		char *str = strtok(NULL,"\n\t");
         if(str){ str = trim(str);}
+		if(strcmp(token,"INCLUDE")==0)
+		{
+			int found = 0;
+			for(int i =0;i<pl;i++)
+			{
+				if(strcmp(libs[i],str)==0) {
+					found = 1;
+					break;
+				}
+			}
+			if(!found)
+			{
+				strcpy(libs[pl++],str);
+				runPass1(str);//asuming that we are in the same directory...
+			}
+		}
 		if(str && str[0] == '"')
 		{
 			push(str);
@@ -131,10 +139,20 @@ int main(int argc, char** argv)
 		}
 				
 	}
-	printf("Pass 1 Calculated Code Size: %d\n", csize);
-	rewind(source);
-	int curr = csize;
-	printf("Pass 2 Starting String Address at: %d\n", curr);
+	fclose(source);
+}
+
+
+void runPass2(char* path,FILE* op)
+{
+	FILE *source = fopen(path,"r");
+
+	if(!source || !op)
+	{
+		perror("File Error!");return;
+	}
+	
+	char line[256];
 	while(fgets(line,sizeof(line),source))
 	{
 		char* c = strchr(line,';');
@@ -148,8 +166,28 @@ int main(int argc, char** argv)
 		int has_arg = 0;
 		
 		int valid = parse2(token,&opcode,&has_arg);
-     	if(valid) fwrite(&opcode,sizeof(unsigned char),1,op);
+     	if(valid == 1) fwrite(&opcode,sizeof(unsigned char),1,op);
+     	else if(valid == 2)
+     	{
+     		char* arg_str = strtok(NULL,"\n\t");
+            if(arg_str){ arg_str = trim(arg_str);}
+			int found = 0;
+			for(int i =0;i<pl;i++)
+			{
+				if(strcmp(libs[i],arg_str)==0) {
+					found = 1;
+					break;
+				}
+			}
+			if(!found)
+			{
+				strcpy(libs[pl++],arg_str);
+				runPass2(arg_str,op);
+			}
+			continue;
+     	}
 		else continue;
+		
         if(has_arg)
         {
         	char* arg_str = strtok(NULL,"\n\t");
@@ -183,7 +221,39 @@ int main(int argc, char** argv)
    	    }
    	    
 	}
-	printf("Pass 2 Starting String Address at: %d\n", curr);
+	fclose(source);
+}
+
+
+int main(int argc, char** argv)
+{
+	if(argc < 2)
+	{
+		printf("Usage: ./");
+		return 1;
+	}
+	char bfn[256];
+	strcpy(bfn,argv[1]);
+	char* dot = strrchr(bfn,'.');
+	if(dot)strcpy(dot,".bin");
+	else strcat(bfn,".bin");
+
+	FILE *op = fopen(bfn,"wb");
+
+	if(!op)
+	{
+		perror("File Error!");return 1;
+	}
+	
+	runPass1(argv[1]);
+
+	memset(libs,0,sizeof(libs));
+	
+	printf("Pass 1 Calculated Code Size: %d\n", csize);
+	curr = csize;
+	printf("Pass 2 Starting String Address at: %d\n",curr);
+	runPass2(argv[1],op);
+	printf("Pass 2 Starting String Address at: %d\n",curr);
 	for(int i=0;i<=sp;i++)
 	{
 		char *s = strings[i];
@@ -192,8 +262,7 @@ int main(int argc, char** argv)
 		char null = '\0';
 		fwrite(&null,1,1,op);
 	}	
-	
-	fclose(source);
+	printf("Final Size: %d\n",csize);
 	fclose(op);
 	return 0;
 }
