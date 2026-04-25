@@ -209,7 +209,7 @@ void runPass2(char* path,FILE* op)
         			arg = curr;
         			curr+=strlen(arg_str)-1;
         		}
-        		else if(opcode == CALL || opcode == JMP || opcode == JE|| opcode == JNE)
+        		else if(opcode == CALL || opcode == JMP || opcode == JE|| opcode == JNE || opcode == JL || opcode == JLE || opcode == JG|| opcode == JGE)
         		{
         			arg = addr(arg_str);
         			if(arg == -1) arg = atoi(arg_str);
