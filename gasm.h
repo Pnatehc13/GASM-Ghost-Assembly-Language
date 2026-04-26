@@ -21,7 +21,7 @@
 #define SCREEN_W        320
 #define SCREEN_H        240
 #define VRAM_START      0xE00000   // Screen pixels
-#define VRAM_SIZE       (SCREEN_W * SCREEN_H * sizeof(uint32_t))
+#define VRAM_SIZE       (SCREEN_W * SCREEN_H)
 #define BACK_BUFFER     (VRAM_START + VRAM_SIZE)
 #define INPUT_START     0xF00000   // 256 bytes for key states
 
@@ -95,7 +95,17 @@ typedef enum {
 	FSEEK = 54,
 	FTELL = 55,
 	FSIZE = 56,
-	FEOF = 57
+	FEOF = 57,
+	MALLOC = 58,
+	FREE = 59,
+	MEMCPY = 60,
+	MEMSET = 61,
+	MUL_FIXED = 62,
+	DIV_FIXED = 63,
+	GETBB = 64,
+	BLIT = 65,
+	TICKS = 66,
+	FILLRECT = 67
 } Opcode;
 
 
@@ -158,6 +168,16 @@ static const opcode OCT[] = {
     {FTELL , "FTELL", 0,1,0},
     {FSIZE , "FSIZE", 0,1,0},
     {FEOF , "FEOF", 0,1,0},
+    {MALLOC, "MALLOC", 0, 1, 0},
+    {FREE, "FREE", 0, 1, 0},
+    {MEMCPY, "MEMCPY", 0, 1, 0},
+    {MEMSET, "MEMSET", 0, 1, 0},
+    {MUL_FIXED, "MUL_FIXED", 0, 1, 0},
+    {DIV_FIXED, "DIV_FIXED", 0, 1, 0},
+    {GETBB, "GETBB", 0, 1, 0},
+    {BLIT,"BLIT",0,1,0},
+    {TICKS,"TICKS",0,1,0},
+    {FILLRECT,"FILLRECT", 0,1,0},
     {-1, "", 0, 0,0}       
 };
 
