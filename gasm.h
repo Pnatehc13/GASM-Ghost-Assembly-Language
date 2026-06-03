@@ -10,13 +10,14 @@
 
 #define DATA_START      0x100000   // Global variables
 #define DATA_SIZE       (1 * 1024 * 1024)
+#define GLOBALS_TOP     (DATA_START + DATA_SIZE)
 
-#define HEAP_START      0x200000   // malloc'd variables and WAD data
+#define HEAP_START      0x200000   // malloc variables 
 #define HEAP_SIZE       (10 * 1024 * 1024)
 
 #define STACK_START     0xC00000   // Local variables, return addresses
 #define STACK_SIZE      (2 * 1024 * 1024)
-#define STACK_TOP       (STACK_START + STACK_SIZE)  // Stack grows DOWN from here
+#define STACK_TOP       (STACK_START + STACK_SIZE)  // Stack grows DOWN 
 
 #define SCREEN_W        320
 #define SCREEN_H        240
@@ -25,6 +26,9 @@
 #define BACK_BUFFER     (VRAM_START + VRAM_SIZE)
 #define INPUT_START     0xF00000   // 256 bytes for key states
 
+#define MAX_STR_TABLE 1024 * 1024
+extern char shared_string_table[MAX_STR_TABLE];
+extern int shared_string_ptr;
 
 typedef struct 
 {
@@ -110,76 +114,82 @@ typedef enum {
 
 
 static const opcode OCT[] = {
-    {HALT, "HALT", 0, 1,1},
-    {PUSH, "PUSH", 1, 5,0},
-    {POP, "POP", 0, 1,0},
-    {ADD, "ADD", 0, 1,0},
-    {SUB, "SUB", 0, 1,0},
-    {MUL, "MUL", 0, 1,0},
-    {DIV, "DIV", 0, 1,0},
-    {STORE, "STORE", 1, 5,0},
-    {LOAD, "LOAD", 1, 5,0},
-    {JMP, "JMP", 1, 5,1},//
-    {CMP, "CMP", 0, 1,0},
-    {PRINT, "PRINT", 0, 1,0},
-    {JE, "JE", 1, 5,1},//
-    {DUP, "DUP", 0, 1,0},
-    {DUP2, "DUP2", 0, 1,0},
-    {SWAP, "SWAP", 0, 1,0},
-    {PRINT_C, "PRINT_C", 0, 1,0},
-    {PRINT_STR, "PRINT_STR", 0, 1,0},
-    {READ_INT, "READ_INT", 0, 1,0},
-    {FUNC, "FUNC", 0, 0,0},  
-    {CALL, "CALL", 1, 5,1},
-    {RET, "RET", 0, 1,1},
-    {JNE, "JNE", 1, 5,1},//
-    {LABEL, "LABEL", 0, 0,0}, 
-    {DRAW,"DRAW",0,1,0},
-    {SLEEP,"SLEEP",0,1,0},
-    {CLS,"CLS",0,1,0},
-    {SHOW,"SHOW",0,1,0},
-    {RAND,"RAND",0,1,0},
-    {KEY,"KEY",0,1,0},
-    {INCLUDE,"INCLUDE",1,0,0},
-    {POKE,"POKE",0,1,0},
-    {PEEK,"PEEK",0,1,0},
-    {GETSP,"GETSP",0,1,0},
-    {GETBP,"GETBP",0,1,0},
-    {AND, "AND", 0, 1, 0},
-    {OR, "OR", 0, 1, 0},
-    {NOT, "NOT", 0, 1, 0},
-    {XOR, "XOR", 0, 1, 0},
-    {SHL, "SHL", 0, 1, 0},
-    {SHR, "SHR", 0, 1, 0},
-    {MOD, "MOD", 0, 1, 0},
-    {PEEKL,"PEEKL",1,5,0},
-    {POKEL,"POKEL",1,5,0},
-    {PEEK8,"PEEK8",0,1,0},
-    {POKE8,"POKE8",0,1,0},
-    {JL, "JL", 1, 5, 1},
-    {JG, "JG", 1, 5, 1},
-    {JLE, "JLE", 1, 5, 1},
-    {JGE, "JGE", 1, 5, 1},
-    {FOPEN , "FOPEN", 0,1,0},
-    {FCLOSE , "FCLOSE", 0,1,0},
-    {FREAD , "FREAD", 0,1,0},
-    {FWRITE , "FWRITE", 0,1,0},
-    {FSEEK , "FSEEK", 0,1,0},
-    {FTELL , "FTELL", 0,1,0},
-    {FSIZE , "FSIZE", 0,1,0},
-    {FEOF , "FEOF", 0,1,0},
-    {MALLOC, "MALLOC", 0, 1, 0},
-    {FREE, "FREE", 0, 1, 0},
-    {MEMCPY, "MEMCPY", 0, 1, 0},
-    {MEMSET, "MEMSET", 0, 1, 0},
-    {MUL_FIXED, "MUL_FIXED", 0, 1, 0},
-    {DIV_FIXED, "DIV_FIXED", 0, 1, 0},
-    {GETBB, "GETBB", 0, 1, 0},
-    {BLIT,"BLIT",0,1,0},
-    {TICKS,"TICKS",0,1,0},
-    {FILLRECT,"FILLRECT", 0,1,0},
-    {-1, "", 0, 0,0}       
-};
+    [HALT] = {HALT, "HALT", 0, 1, 1},
+    [PUSH] = {PUSH, "PUSH", 1, 2, 0},
+    [POP] = {POP, "POP", 0, 1, 0},
+    [ADD] = {ADD, "ADD", 0, 1, 0},
+    [SUB] = {SUB, "SUB", 0, 1, 0},
+    [MUL] = {MUL, "MUL", 0, 1, 0},
+    [DIV] = {DIV, "DIV", 0, 1, 0},
+    [STORE] = {STORE, "STORE", 1, 2, 0},
+    [LOAD] = {LOAD, "LOAD", 1, 2, 0},
+    [JMP] = {JMP, "JMP", 1, 2, 1},
+    [CMP] = {CMP, "CMP", 0, 1, 0},
+    [PRINT] = {PRINT, "PRINT", 0, 1, 0},
+    [JE] = {JE, "JE", 1, 2, 1},
+    [DUP] = {DUP, "DUP", 0, 1, 0},
+    [DUP2] = {DUP2, "DUP2", 0, 1, 0},
+    [SWAP] = {SWAP, "SWAP", 0, 1, 0},
+    [PRINT_C] = {PRINT_C, "PRINT_C", 0, 1, 0},
+    [PRINT_STR] = {PRINT_STR, "PRINT_STR", 0, 1, 0},
+    [READ_INT] = {READ_INT, "READ_INT", 0, 1, 0},
+    [FUNC] = {FUNC, "FUNC", 0, 0, 0},  
+    [CALL] = {CALL, "CALL", 1, 2, 1},
+    [RET] = {RET, "RET", 0, 1, 1},
+    [JNE] = {JNE, "JNE", 1, 2, 1},
+    [LABEL] = {LABEL, "LABEL", 0, 0, 0}, 
+    [DRAW] = {DRAW, "DRAW", 0, 1, 0},
+    [SLEEP] = {SLEEP, "SLEEP", 0, 1, 0},
+    [CLS] = {CLS, "CLS", 0, 1, 0},
+    [SHOW] = {SHOW, "SHOW", 0, 1, 0},
+    [RAND] = {RAND, "RAND", 0, 1, 0},
+    [KEY] = {KEY, "KEY", 0, 1, 0},
+    [INCLUDE] = {INCLUDE, "INCLUDE", 1, 0, 0},
+    [POKE] = {POKE, "POKE", 0, 1, 0},
+    [PEEK] = {PEEK, "PEEK", 0, 1, 0},
+    [GETSP] = {GETSP, "GETSP", 0, 1, 0},
+    [GETBP] = {GETBP, "GETBP", 0, 1, 0},
+    [AND] = {AND, "AND", 0, 1, 0},
+    [OR] = {OR, "OR", 0, 1, 0},
+    [NOT] = {NOT, "NOT", 0, 1, 0},
+    [XOR] = {XOR, "XOR", 0, 1, 0},
+    [SHL] = {SHL, "SHL", 0, 1, 0},
+    [SHR] = {SHR, "SHR", 0, 1, 0},
+    [MOD] = {MOD, "MOD", 0, 1, 0},
+    [PEEKL] = {PEEKL, "PEEKL", 1, 2, 0},
+    [POKEL] = {POKEL, "POKEL", 1, 2, 0},
+    [PEEK8] = {PEEK8, "PEEK8", 0, 1, 0},
+    [POKE8] = {POKE8, "POKE8", 0, 1, 0},
+    [JL] = {JL, "JL", 1, 2, 1},
+    [JG] = {JG, "JG", 1, 2, 1},
+    [JLE] = {JLE, "JLE", 1, 2, 1},
+    [JGE] = {JGE, "JGE", 1, 2, 1},
+    [FOPEN] = {FOPEN, "FOPEN", 0, 1, 0},
+    [FCLOSE] = {FCLOSE, "FCLOSE", 0, 1, 0},
+    [FREAD] = {FREAD, "FREAD", 0, 1, 0},
+    [FWRITE] = {FWRITE, "FWRITE", 0, 1, 0},
+    [FSEEK] = {FSEEK, "FSEEK", 0, 1, 0},
+    [FTELL] = {FTELL, "FTELL", 0, 1, 0},
+    [FSIZE] = {FSIZE, "FSIZE", 0, 1, 0},
+    [FEOF] = {FEOF, "FEOF", 0, 1, 0},
+    [MALLOC] = {MALLOC, "MALLOC", 0, 1, 0},
+    [FREE] = {FREE, "FREE", 0, 1, 0},
+    [MEMCPY] = {MEMCPY, "MEMCPY", 0, 1, 0},
+    [MEMSET] = {MEMSET, "MEMSET", 0, 1, 0},
+    [MUL_FIXED] = {MUL_FIXED, "MUL_FIXED", 0, 1, 0},
+    [DIV_FIXED] = {DIV_FIXED, "DIV_FIXED", 0, 1, 0},
+    [GETBB] = {GETBB, "GETBB", 0, 1, 0},
+    [BLIT] = {BLIT, "BLIT", 0, 1, 0},
+    [TICKS] = {TICKS, "TICKS", 0, 1, 0},
+    [FILLRECT] = {FILLRECT, "FILLRECT", 0, 1, 0},
+    { -1, "", 0, 0, 0 }
+    };
 
+
+
+
+
+int vm_start(char* path);
+int assm_start(char* path);
 
 #endif

@@ -12,6 +12,15 @@ char* trim(char* s) {
     *(back+1) = '\0';
     return s;
 }
+int vp = 0;
+int dp = 0;
+typedef struct 
+{
+    char name[64];
+    int address;
+}GlobalVar;
+GlobalVar global_table[256];
+int gtp = 0;
 
 struct
 {
@@ -37,30 +46,83 @@ int addr(char*s)
 	return -1;
 }
 
+int get_global_addr(char* s)
+{
+	if(s[0] == '[' && s[strlen(s)-1] == ']')
+	{
+		char varname[64];
+		int len = strlen(s) - 2;
+		strncpy(varname, s + 1, len);
+    varname[len] = '\0';
+    for(int i =0;i<gtp;i++)
+    {
+			if(strcmp(global_table[i].name ,varname) == 0)
+			{
+				return global_table[i].address;
+			}
+    }
+	}
+	return -1;
+}
 
-char strings[100][256];
-int sp = -1;
-void push(char s[])
+
+int get_or_add_string(char* s)
 {
-	sp++;
-	strcpy(strings[sp],s);    
+	char clean[256];
+	int j = 0;
+	for(int i = 1; i < (int)strlen(s) - 1; i++)
+	{
+		 if(s[i] == '\\' && s[i+1] == 'n')
+		 {
+				clean[j++] = '\n';
+				i++;
+		 }
+		 else clean[j++] = s[i];
+	}
+	clean[j] = '\0';
+	
+	int offset = 0;
+	while(offset < shared_string_ptr) 
+	{
+		if(strcmp(&shared_string_table[offset], clean) == 0) 
+		{
+			return DATA_START + offset; 
+		}
+		offset += strlen(&shared_string_table[offset]) + 1;
+	}
+	int new_addr = DATA_START + shared_string_ptr;
+	strcpy(&shared_string_table[shared_string_ptr], clean);
+	shared_string_ptr += strlen(clean) + 1;
+	return new_addr;
 }
-char* pop()
-{
-	return strings[sp--];
-}
+
+
+
 int csize = 0;
 int dsize = 0;
 int curr = 0;
 
 void parse1(char* t)
 {
+	if(strncmp(t,"global_",strlen("global_")) == 0)
+	{
+		strcpy(global_table[gtp].name,t);
+		global_table[gtp].address = GLOBALS_TOP - ((gtp+1)*4);
+		gtp++;
+		csize+=0;
+		return;
+	}
+	else if(t[0] == '[')
+	{
+		csize+=4;
+		return;
+	}
 	int i =0;
 	while(OCT[i].op !=-1)
 	{
 		if(strcmp(t,OCT[i].name)==0)
 		{
-			csize+=OCT[i].size;
+			csize+=(OCT[i].size*4);
 			return;
 		}
 		i++;
@@ -71,6 +133,7 @@ void parse1(char* t)
 
 int parse2(char* t,unsigned char* c,int* op)
 {
+	if(strncmp(t, "global_", 7) == 0) return 0;
 	int i=0;
 	while(OCT[i].op != -1)
 	{
@@ -130,7 +193,6 @@ void runPass1(char* path)
 		}
 		if(str && str[0] == '"')
 		{
-			push(str);
 			dsize+=strlen(str);
 		}
 		else if(str && (strcmp(token,"FUNC")==0 || strcmp(token,"LABEL") == 0))
@@ -166,7 +228,11 @@ void runPass2(char* path,FILE* op)
 		int has_arg = 0;
 		
 		int valid = parse2(token,&opcode,&has_arg);
-     	if(valid == 1) fwrite(&opcode,sizeof(unsigned char),1,op);
+     	if(valid == 1)
+     	{
+					int op_word = (int)opcode;
+					fwrite(&op_word,sizeof(int),1,op);
+     	}
      	else if(valid == 2)
      	{
      		char* arg_str = strtok(NULL,"\n\t");
@@ -195,7 +261,12 @@ void runPass2(char* path,FILE* op)
 
         	if(arg_str)
         	{
-        		if(opcode == STORE || opcode== LOAD)
+						int globaladdr = get_global_addr(arg_str);
+						if(globaladdr !=-1)
+						{
+							arg = globaladdr;
+						}
+        		else if(opcode == STORE || opcode== LOAD)
         		{
         			if(arg_str[0] >= '0' && arg_str[0] <= '9') arg = atoi(arg_str);
         			else arg = arg_str[0] - 'A';
@@ -206,8 +277,7 @@ void runPass2(char* path,FILE* op)
         		}
         		else if(arg_str[0] == '"')
         		{
-        			arg = curr;
-        			curr+=strlen(arg_str)-1;
+        			arg = get_or_add_string(arg_str) ;
         		}
         		else if(opcode == CALL || opcode == JMP || opcode == JE|| opcode == JNE || opcode == JL || opcode == JLE || opcode == JG|| opcode == JGE)
         		{
@@ -225,15 +295,10 @@ void runPass2(char* path,FILE* op)
 }
 
 
-int main(int argc, char** argv)
+int assm_start(char* path)
 {
-	if(argc < 2)
-	{
-		printf("Usage: ./");
-		return 1;
-	}
 	char bfn[256];
-	strcpy(bfn,argv[1]);
+	strcpy(bfn,path);
 	char* dot = strrchr(bfn,'.');
 	if(dot)strcpy(dot,".bin");
 	else strcat(bfn,".bin");
@@ -245,23 +310,14 @@ int main(int argc, char** argv)
 		perror("File Error!");return 1;
 	}
 	
-	runPass1(argv[1]);
+	runPass1(path);
 
 	memset(libs,0,sizeof(libs));
 	
 	printf("Pass 1 Calculated Code Size: %d\n", csize);
 	curr = csize;
 	printf("Pass 2 Starting String Address at: %d\n",curr);
-	runPass2(argv[1],op);
-	printf("Pass 2 Starting String Address at: %d\n",curr);
-	for(int i=0;i<=sp;i++)
-	{
-		char *s = strings[i];
-		s++;
-		fwrite(s,strlen(s)-1,1,op);
-		char null = '\0';
-		fwrite(&null,1,1,op);
-	}	
+	runPass2(path,op);
 	printf("Final Size: %d\n",csize);
 	fclose(op);
 	return 0;

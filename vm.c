@@ -23,7 +23,7 @@ typedef struct block
 
 
 typedef struct
-{
+{ 
 	unsigned char* mem;
 	int ip;//Instruction pointer
 	int sp;//Stack pointer
@@ -61,6 +61,7 @@ VM* new_Vm()
 	for(int i = 0; i < 256; i++) {
 		palette[i] = (i << 16) | (i << 8) | i;
 	}
+	memcpy(&vm->mem[DATA_START], shared_string_table, shared_string_ptr);
 
 	return vm;	
 }
@@ -87,6 +88,7 @@ void vmwrite(VM* vm,int addr,int val)
 	if(addr<0||addr+4>MEM_SIZE)
 	{
 		vm_panic("Access Out of Bounds!");
+		
 	}
 	vm->mem[addr] = (unsigned char)(val & 0xFF);
 	vm->mem[addr+1] = (unsigned char)((val >> 8) & 0xFF);
@@ -95,7 +97,12 @@ void vmwrite(VM* vm,int addr,int val)
 }
 
 
-
+unsigned char vmread8(VM* vm, int addr) {
+    if (addr < 0 || addr >= MEM_SIZE) {
+        vm_panic("Access Out of Bounds (8-bit read)!");
+    }
+    return vm->mem[addr];
+}
 
 void push(VM* vm,int v)
 {
@@ -112,6 +119,7 @@ int pop(VM* vm)
 	vm->sp += 4;
 	if(vm->sp > STACK_TOP)
 	{
+	 	printf("\n[DEBUG] Underflow at IP: %d (Opcode: %d)\n", vm->ip, vmread8(vm, vm->ip));
 		vm_panic("Stack Underflow!!");
 	}
 	return vmread(vm, vm->sp);
@@ -126,12 +134,7 @@ void vmwrite8(VM* vm, int addr, unsigned char val) {
     vm->mem[addr] = val;
 }
 
-unsigned char vmread8(VM* vm, int addr) {
-    if (addr < 0 || addr >= MEM_SIZE) {
-        vm_panic("Access Out of Bounds (8-bit read)!");
-    }
-    return vm->mem[addr];
-}
+
 
 
 void loader(VM* vm,char* path)
@@ -247,7 +250,8 @@ void handle_ticks(VM* vm)
 
 void handle_halt(VM* vm)
 {
-	vm->running = 0;
+	printf("\n[VM] Execution finished gracefully.\n");
+	exit(0);
 }
 void handle_draw(VM* vm)
 {
@@ -372,7 +376,7 @@ void handle_getbb(VM* vm)
 
 void handle_push(VM* vm)
 {
-	int arg = vmread(vm, vm->ip + 1);
+	int arg = vmread(vm, vm->ip + 4);
 	push(vm, arg);
 }
 
@@ -550,7 +554,7 @@ void handle_feof(VM* vm)
 
 void handle_store(VM* vm)
 {
-	int ri = vmread(vm,vm->ip + 1);
+	int ri = vmread(vm,vm->ip + 4);
 	int val = pop(vm);
 	if(ri < 0 || ri >= 32) {
 		vm_panic("Register access out of bounds!");
@@ -559,7 +563,7 @@ void handle_store(VM* vm)
 }
 void handle_load(VM* vm)
 {
-	int ri = vmread(vm, vm->ip + 1);
+	int ri = vmread(vm, vm->ip + 4);
 	if(ri < 0 || ri >31 ) {
 		vm_panic("Register access out of bounds!");
 	}
@@ -569,7 +573,10 @@ void handle_load(VM* vm)
 
 void handle_print(VM* vm)
 {
-	printf(">> %d\n", vmread(vm, vm->sp + 4));
+	int value = pop(vm); 
+	printf(">> %d\n", value);
+	fflush(stdout);
+	//printf(">> %d\n", vmread(vm, vm->sp + 4));
 }
 void handle_printc(VM* vm)
 {
@@ -580,17 +587,54 @@ void handle_printstr(VM* vm)
 {
 	int addr = pop(vm);
 	// Safe string printing: stop at null or end of memory
-	for(int i = addr; i < MEM_SIZE; i++) {
+	for(int i = addr; i < MEM_SIZE; i++) 
+	{
 		char c = (char)vmread8(vm, i);
 		if(c == '\0') break;
-		printf("%c", c);
+		else if(c == '%')
+		{
+			char val = (char)vmread8(vm,i+1);
+			switch(val)
+			{
+				case 'd':
+				{
+					printf("%d",pop(vm));
+					i++;
+					break;
+				}
+				case 'c':
+				{
+					printf("%c",pop(vm));
+					i++;
+					break;
+				}
+				case 's':
+				{
+					int ad = pop(vm);
+					char sc;
+					while(1)
+					{
+						sc = (char)vmread8(vm,ad);
+						if(sc == '\0')break;
+						putchar(sc);
+						ad++;
+					}
+					i++;
+					break;
+				}
+				default:
+					putchar(c);
+			}
+		}
+		else 
+			putchar(c);
 	}
 }
 
 void handle_poke(VM* vm)
 {
-	int a = pop(vm);
 	int v = pop(vm);
+	int a = pop(vm);
 	vmwrite(vm,a,v);
 }
 
@@ -602,24 +646,24 @@ void handle_peek(VM* vm)
 }
 
 void handle_peek8(VM* vm) { int a = pop(vm); push(vm, vmread8(vm, a)); }
-void handle_poke8(VM* vm){ int a = pop(vm); int v = pop(vm); vmwrite8(vm, a, (unsigned char)v); }
+void handle_poke8(VM* vm){ int v = pop(vm); int a = pop(vm); vmwrite8(vm, a, (unsigned char)v); }
 
 void handle_peekl(VM* vm)
 {
-	int offset = vmread(vm,vm->ip+1);
+	int offset = vmread(vm,vm->ip+4);
 	push(vm,vmread(vm,vm->bp - offset));
 }
 
 void handle_pokel(VM* vm)
 {
-	int offset = vmread(vm,vm->ip+1);
+	int offset = vmread(vm,vm->ip+4);
 	int v = pop(vm);
 	vmwrite(vm,vm->bp-offset , v);
 }
 
 void handle_jmp(VM* vm)
 {
-	vm->ip = vmread(vm, vm->ip + 1);
+	vm->ip = vmread(vm, vm->ip + 4);
 }
 void handle_cmp(VM* vm)
 {
@@ -630,50 +674,52 @@ void handle_cmp(VM* vm)
 }
 void handle_je(VM* vm)
 {
-	int target = vmread(vm, vm->ip + 1);
+	int target = vmread(vm, vm->ip + 4);
+	int b = pop(vm);
 	int a = pop(vm);
-	if(a == 1) vm->ip = target;
-	else vm->ip += OCT[JE].size;
+	if(a == b) vm->ip = target;
+	else vm->ip += (OCT[JE].size*4);
 }
 void handle_jne(VM* vm)
 {
-	int target = vmread(vm, vm->ip + 1);
+	int target = vmread(vm, vm->ip + 4);
+	int b = pop(vm);
 	int a = pop(vm);
-	if(a != 1) vm->ip = target;
-	else vm->ip += OCT[JNE].size;
+	if(a != b) vm->ip = target;
+	else vm->ip += (OCT[JNE].size*4);
 }
 
 void handle_jl(VM* vm)
 {
-	int target = vmread(vm, vm->ip + 1);
+	int target = vmread(vm, vm->ip + 4);
 	int a = pop(vm);
 	int b = pop(vm);
 	if(b < a) vm->ip = target;
-	else vm->ip += OCT[JL].size;
+	else vm->ip += (OCT[JL].size*4);
 }
 void handle_jg(VM* vm)
 {
-	int target = vmread(vm, vm->ip + 1);
+	int target = vmread(vm, vm->ip + 4);
 	int a = pop(vm);
 	int b = pop(vm);
 	if(b > a) vm->ip = target;
-	else vm->ip += OCT[JG].size;
+	else vm->ip += (OCT[JG].size*4);
 }
 void handle_jle(VM* vm)
 {
-	int target = vmread(vm, vm->ip + 1);
+	int target = vmread(vm, vm->ip + 4);
 	int a = pop(vm);
 	int b = pop(vm);
 	if(b <= a) vm->ip = target;
-	else vm->ip += OCT[JLE].size;
+	else vm->ip += (OCT[JLE].size*4);
 }
 void handle_jge(VM* vm)
 {
-	int target = vmread(vm, vm->ip + 1);
+	int target = vmread(vm, vm->ip + 4);
 	int a = pop(vm);
 	int b = pop(vm);
 	if(b >= a) vm->ip = target;
-	else vm->ip += OCT[JGE].size;
+	else vm->ip += (OCT[JGE].size*4);
 }
 
 void handle_dup(VM* vm)
@@ -707,9 +753,9 @@ void handle_readint(VM* vm)
 void handle_call(VM* vm)
 {
 	push(vm,vm->bp);
-	push(vm, vm->ip + OCT[CALL].size);
+	push(vm, vm->ip + OCT[CALL].size*4);
 	vm->bp = vm->sp;
-	vm->ip = vmread(vm, vm->ip + 1);
+	vm->ip = vmread(vm, vm->ip + 4);
 }
 void handle_ret(VM* vm)
 {
@@ -797,11 +843,17 @@ Handler dispatch_table[] = {
 
 void cpu(VM* vm)
 {
-	unsigned char opcode = vmread8(vm, vm->ip);
+	unsigned char opcode = vmread(vm, vm->ip);
 	dispatch_table[opcode](vm);
+	if(opcode == HALT)
+	{
+		vm->running = 0;
+		return;
+	}
 	if(!OCT[opcode].isflow)
 	{
-		vm->ip+=OCT[opcode].size;
+		if(!vm->running) return;
+		vm->ip+=(OCT[opcode].size*4);
 	}
 }
 
@@ -830,7 +882,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             /*
-            // Draw a red rectangle to prove we have graphics
+             
             HBRUSH brush = CreateSolidBrush(RGB(255, 0, 0));
             FillRect(hdc, &ps.rcPaint, brush);
             DeleteObject(brush);
@@ -846,7 +898,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 
 
-int main(int argc,char** argv)
+int vm_start(char* path)
 {
 
 	WNDCLASSEX wc;
@@ -889,17 +941,12 @@ int main(int argc,char** argv)
 	ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
 	
-	if(argc < 2)
-	{
-		printf("Usage: ./");
-		return 1;
-	}
 	machine = new_Vm();
 	machine->hwnd = hwnd;
 	machine->hdc = GetDC(hwnd);	
-	loader(machine,argv[1]);
+	loader(machine,path);
 
-	while(machine->running && machine->ip < machine->ps) 
+	while(machine->running) 
 	{	
 		if(PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
 		{
@@ -914,4 +961,3 @@ int main(int argc,char** argv)
 	free(machine);
 	return 0;
 }
-
