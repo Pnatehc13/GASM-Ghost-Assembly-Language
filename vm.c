@@ -50,8 +50,9 @@ VM* new_Vm()
 	srand((unsigned int)time(NULL));	
 	VM* vm = (VM *)malloc(sizeof(VM));
 	vm->mem = (unsigned char*)malloc(MEM_SIZE*sizeof(unsigned char));
-	vm->sp = STACK_TOP;
-	vm->bp = STACK_TOP;
+	memset(vm->mem, 0, MEM_SIZE);
+	vm->sp = STACK_START;
+	vm->bp = STACK_START;
 	vm->ip = CODE_START;
 	vm->running =1;
 	memset(vm->files, 0, sizeof(vm->files));
@@ -106,18 +107,18 @@ unsigned char vmread8(VM* vm, int addr) {
 
 void push(VM* vm,int v)
 {
-	if(vm->sp - 4 <= STACK_START)
+	if(vm->sp + 4 > STACK_TOP)
 	{
 		vm_panic("Stack Overflow!!");
 	}
 	vmwrite(vm, vm->sp, v);
-	vm->sp -= 4;
+	vm->sp += 4;
 }
 
 int pop(VM* vm)
 {
-	vm->sp += 4;
-	if(vm->sp > STACK_TOP)
+	vm->sp -= 4;
+	if(vm->sp < STACK_START)
 	{
 	 	printf("\n[DEBUG] Underflow at IP: %d (Opcode: %d)\n", vm->ip, vmread8(vm, vm->ip));
 		vm_panic("Stack Underflow!!");
@@ -651,14 +652,14 @@ void handle_poke8(VM* vm){ int v = pop(vm); int a = pop(vm); vmwrite8(vm, a, (un
 void handle_peekl(VM* vm)
 {
 	int offset = vmread(vm,vm->ip+4);
-	push(vm,vmread(vm,vm->bp - offset));
+	push(vm,vmread(vm,vm->bp + offset));
 }
 
 void handle_pokel(VM* vm)
 {
 	int offset = vmread(vm,vm->ip+4);
 	int v = pop(vm);
-	vmwrite(vm,vm->bp-offset , v);
+	vmwrite(vm,vm->bp+offset , v);
 }
 
 void handle_jmp(VM* vm)
@@ -724,7 +725,7 @@ void handle_jge(VM* vm)
 
 void handle_dup(VM* vm)
 {
-	int val = vmread(vm, vm->sp + 4);
+	int val = vmread(vm, vm->sp - 4);
 	push(vm, val);
 }
 void handle_dup2(VM* vm)

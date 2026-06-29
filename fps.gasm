@@ -1,0 +1,572 @@
+; =========================================================================
+; GASM 3D ROTATING CUBE WITH WASD CAMERA
+; =========================================================================
+
+global_vertices 24
+global_proj_x 8
+global_proj_y 8
+global_cam_x 1
+global_cam_y 1
+global_cam_z 1
+
+; --- Initialize Camera ---
+PUSH [global_cam_x]
+PUSH 0
+POKE
+
+PUSH [global_cam_y]
+PUSH 0
+POKE
+
+PUSH [global_cam_z]
+PUSH -16384000
+POKE
+
+; --- Initialize 3D Cube Vertices (X, Y, Z) ---
+; Fixed Point (16.16): 50.0 = 3276800
+
+; V0 (-50, -50, -50)
+PUSH [global_vertices]
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 4
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 8
+ADD
+PUSH -3276800
+POKE
+
+; V1 (50, -50, -50)
+PUSH [global_vertices]
+PUSH 12
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 16
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 20
+ADD
+PUSH -3276800
+POKE
+
+; V2 (50, 50, -50)
+PUSH [global_vertices]
+PUSH 24
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 28
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 32
+ADD
+PUSH -3276800
+POKE
+
+; V3 (-50, 50, -50)
+PUSH [global_vertices]
+PUSH 36
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 40
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 44
+ADD
+PUSH -3276800
+POKE
+
+; V4 (-50, -50, 50)
+PUSH [global_vertices]
+PUSH 48
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 52
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 56
+ADD
+PUSH 3276800
+POKE
+
+; V5 (50, -50, 50)
+PUSH [global_vertices]
+PUSH 60
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 64
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 68
+ADD
+PUSH 3276800
+POKE
+
+; V6 (50, 50, 50)
+PUSH [global_vertices]
+PUSH 72
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 76
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 80
+ADD
+PUSH 3276800
+POKE
+
+; V7 (-50, 50, 50)
+PUSH [global_vertices]
+PUSH 84
+ADD
+PUSH -3276800
+POKE
+PUSH [global_vertices]
+PUSH 88
+ADD
+PUSH 3276800
+POKE
+PUSH [global_vertices]
+PUSH 92
+ADD
+PUSH 3276800
+POKE
+
+
+LABEL main_loop
+    CLS
+
+    ; --- CAMERA INPUT HANDLING ---
+    
+    ; W (87) -> Move Forward (Increase Z)
+    PUSH 87
+    KEY
+    PUSH 1
+    JNE skip_w
+    PUSH [global_cam_z]
+    DUP
+    PEEK
+    PUSH 327680 
+    ADD
+    POKE
+LABEL skip_w
+
+    ; S (83) -> Move Backward (Decrease Z)
+    PUSH 83
+    KEY
+    PUSH 1
+    JNE skip_s
+    PUSH [global_cam_z]
+    DUP
+    PEEK
+    PUSH 327680
+    SUB
+    POKE
+LABEL skip_s
+
+    ; A (65) -> Move Left (Decrease X)
+    PUSH 65
+    KEY
+    PUSH 1
+    JNE skip_a
+    PUSH [global_cam_x]
+    DUP
+    PEEK
+    PUSH 327680
+    SUB
+    POKE
+LABEL skip_a
+
+    ; D (68) -> Move Right (Increase X)
+    PUSH 68
+    KEY
+    PUSH 1
+    JNE skip_d
+    PUSH [global_cam_x]
+    DUP
+    PEEK
+    PUSH 327680
+    ADD
+    POKE
+LABEL skip_d
+
+    ; Q (81) -> Move Up (Decrease Y)
+    PUSH 81
+    KEY
+    PUSH 1
+    JNE skip_q
+    PUSH [global_cam_y]
+    DUP
+    PEEK
+    PUSH 327680
+    SUB
+    POKE
+LABEL skip_q
+
+    ; E (69) -> Move Down (Increase Y)
+    PUSH 69
+    KEY
+    PUSH 1
+    JNE skip_e
+    PUSH [global_cam_y]
+    DUP
+    PEEK
+    PUSH 327680
+    ADD
+    POKE
+LABEL skip_e
+
+
+    ; --- RENDER PIPELINE ---
+
+    PUSH 0
+    STORE 0 
+
+LABEL vertex_loop
+    LOAD 0
+    PUSH 8
+    JE finish_vertices
+
+    ; Get Base Address
+    PUSH [global_vertices]
+    LOAD 0
+    PUSH 12
+    MUL
+    ADD
+    STORE 20 
+
+    LOAD 20
+    PEEK
+    STORE 10 
+    
+    LOAD 20
+    PUSH 4
+    ADD
+    PEEK
+    STORE 11 
+    
+    LOAD 20
+    PUSH 8
+    ADD
+    PEEK
+    STORE 12 
+
+    ; Rotate Y-Axis (X-Z plane)
+    LOAD 10
+    PUSH 65450
+    MUL_FIXED
+    LOAD 12
+    PUSH 3270
+    MUL_FIXED
+    SUB
+    STORE 13 
+    
+    LOAD 10
+    PUSH 3270
+    MUL_FIXED
+    LOAD 12
+    PUSH 65450
+    MUL_FIXED
+    ADD
+    STORE 12 
+    
+    LOAD 13
+    STORE 10 
+
+    ; Rotate X-Axis (Y-Z plane)
+    LOAD 11
+    PUSH 65450
+    MUL_FIXED
+    LOAD 12
+    PUSH 3270
+    MUL_FIXED
+    SUB
+    STORE 13 
+    
+    LOAD 11
+    PUSH 3270
+    MUL_FIXED
+    LOAD 12
+    PUSH 65450
+    MUL_FIXED
+    ADD
+    STORE 12 
+    
+    LOAD 13
+    STORE 11 
+
+    ; Save Rotated (Cube continues to spin in world space)
+    LOAD 20
+    LOAD 10
+    POKE
+    
+    LOAD 20
+    PUSH 4
+    ADD
+    LOAD 11
+    POKE
+    
+    LOAD 20
+    PUSH 8
+    ADD
+    LOAD 12
+    POKE
+
+    ; Perspective Projection with Camera
+    ; Z_cam = Z_world - Z_camera
+    LOAD 12
+    PUSH [global_cam_z]
+    PEEK
+    SUB
+    STORE 14
+    
+    ; Safety check: Only draw vertices that are in front of the camera
+    LOAD 14
+    PUSH 65536
+    JL skip_proj
+
+    ; X_cam = X_world - X_camera
+    LOAD 10
+    PUSH [global_cam_x]
+    PEEK
+    SUB
+    STORE 17
+
+    ; Y_cam = Y_world - Y_camera
+    LOAD 11
+    PUSH [global_cam_y]
+    PEEK
+    SUB
+    STORE 18
+
+    ; X_proj = 160 + (X_cam * 200) / Z_cam 
+    LOAD 17
+    PUSH 200
+    MUL
+    LOAD 14
+    DIV_FIXED
+    PUSH 16
+    SHR
+    PUSH 160
+    ADD
+    STORE 15
+    
+    ; Y_proj = 120 + (Y_cam * 200) / Z_cam
+    LOAD 18
+    PUSH 200
+    MUL
+    LOAD 14
+    DIV_FIXED
+    PUSH 16
+    SHR
+    PUSH 120
+    ADD
+    STORE 16
+
+    ; Store Result
+    PUSH [global_proj_x]
+    LOAD 0
+    PUSH 4
+    MUL
+    ADD
+    LOAD 15
+    POKE
+    
+    PUSH [global_proj_y]
+    LOAD 0
+    PUSH 4
+    MUL
+    ADD
+    LOAD 16
+    POKE
+
+LABEL skip_proj
+    LOAD 0
+    PUSH 1
+    ADD
+    STORE 0
+    JMP vertex_loop
+
+LABEL finish_vertices
+    ; Draw Edges
+    PUSH 0
+    STORE 1
+    PUSH 1
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 1
+    STORE 1
+    PUSH 2
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 2
+    STORE 1
+    PUSH 3
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 3
+    STORE 1
+    PUSH 0
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 4
+    STORE 1
+    PUSH 5
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 5
+    STORE 1
+    PUSH 6
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 6
+    STORE 1
+    PUSH 7
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 7
+    STORE 1
+    PUSH 4
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 0
+    STORE 1
+    PUSH 4
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 1
+    STORE 1
+    PUSH 5
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 2
+    STORE 1
+    PUSH 6
+    STORE 2
+    CALL draw_edge
+    
+    PUSH 3
+    STORE 1
+    PUSH 7
+    STORE 2
+    CALL draw_edge
+
+    SHOW
+    PUSH 16
+    SLEEP
+    JMP main_loop
+
+
+FUNC draw_edge
+    PUSH [global_proj_x]
+    LOAD 1
+    PUSH 4
+    MUL
+    ADD
+    PEEK
+    STORE 21 
+    
+    PUSH [global_proj_y]
+    LOAD 1
+    PUSH 4
+    MUL
+    ADD
+    PEEK
+    STORE 22 
+    
+    PUSH [global_proj_x]
+    LOAD 2
+    PUSH 4
+    MUL
+    ADD
+    PEEK
+    STORE 23 
+    
+    PUSH [global_proj_y]
+    LOAD 2
+    PUSH 4
+    MUL
+    ADD
+    PEEK
+    STORE 24 
+    
+    PUSH 0
+    STORE 25 
+    
+LABEL edge_loop
+    LOAD 25
+    PUSH 11
+    JE edge_done
+    
+    LOAD 23
+    LOAD 21
+    SUB
+    LOAD 25
+    MUL
+    PUSH 10
+    DIV
+    LOAD 21
+    ADD
+    STORE 26
+    
+    LOAD 24
+    LOAD 22
+    SUB
+    LOAD 25
+    MUL
+    PUSH 10
+    DIV
+    LOAD 22
+    ADD
+    STORE 27
+    
+    LOAD 26
+    LOAD 27
+    PUSH 255
+    DRAW
+    
+    LOAD 25
+    PUSH 1
+    ADD
+    STORE 25
+    JMP edge_loop
+    
+LABEL edge_done
+    RET

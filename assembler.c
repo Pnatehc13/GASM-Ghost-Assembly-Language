@@ -101,13 +101,17 @@ int get_or_add_string(char* s)
 int csize = 0;
 int dsize = 0;
 int curr = 0;
+int current_global_offset = 0;
 
 void parse1(char* t)
 {
 	if(strncmp(t,"global_",strlen("global_")) == 0)
 	{
 		strcpy(global_table[gtp].name,t);
-		global_table[gtp].address = GLOBALS_TOP - ((gtp+1)*4);
+		char* size_token = strtok(NULL, " \n\t");	
+		int element_count = size_token ? atoi(size_token) : 1;
+		current_global_offset += (4 * element_count);
+		global_table[gtp].address = GLOBALS_TOP - current_global_offset;
 		gtp++;
 		csize+=0;
 		return;
